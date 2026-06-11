@@ -4,3 +4,4 @@ logs/
 olist.duckdb
 .DS_Store
 profiles.yml
+.user.yml
