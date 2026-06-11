@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: >
+      Cleaned orders, one row per order_id. Timestamps cast and renamed to
+      consistent *_at names. This is the reference pattern for the staging layer.
+    columns:
+      - name: order_id
+        description: Primary key. One row per order.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_status
+        description: >
+          Order lifecycle status. Not every order reaches 'delivered' — some are
+          canceled, unavailable, or still processing. Mind this when you define delivery metrics.
+      - name: delivered_at
+        description: When the customer received the order. Null unless delivered.

@@ -1,0 +1,154 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: >
+      One row per order. The primary model for delivery performance analysis.
+      Delivery metrics (is_late, days_late, stage lags) are only meaningful for
+      orders with order_status = 'delivered'. Non-delivered orders are included
+      so counts and statuses are not silently filtered.
+    data_tests:
+      - dbt_utils.equal_rowcount:
+          compare_model: ref('stg_orders')
+    columns:
+      - name: order_id
+        description: Primary key. One row per order.
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Foreign key to dim_customers (via customer_unique_id on stg_customers).
+        data_tests:
+          - not_null
+      - name: order_status
+        description: >
+          Lifecycle status of the order. Delivery metrics are only valid for
+          'delivered' orders — filter accordingly.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['delivered', 'shipped', 'canceled', 'invoiced', 'processing', 'unavailable', 'approved', 'created']
+      - name: is_late
+        description: >
+          True if the order was delivered after the estimated delivery date.
+          False for on-time deliveries and all non-delivered orders.
+      - name: days_late
+        description: >
+          Days between estimated_delivery_at and delivered_at. Positive = late,
+          negative = early. Null for non-delivered orders.
+      - name: approval_lag_days
+        description: Days between purchase and payment approval.
+      - name: fulfilment_lag_days
+        description: Days between approval and handover to carrier.
+      - name: delivery_lag_days
+        description: Days between carrier handover and customer delivery.
+      - name: total_item_value
+        description: >
+          Sum of item_price across all items in the order. This is the agreed
+          order value, not the payment amount. total_payment_value reflects the
+          instalment schedule and should not be used as order value.
+      - name: total_payment_value
+        description: >
+          Sum of all payment rows for the order. Includes instalments — an order
+          paid in 3x will show 3x the instalment amount here. Use total_item_value
+          for order value analysis.
+      - name: primary_payment_type
+        description: Payment type with payment_sequential = 1. The main payment method.
+      - name: has_voucher
+        description: 1 if any payment row for this order used a voucher, else 0.
+      - name: review_score
+        description: >
+          Customer review score (1-5). Where an order has multiple reviews, the
+          latest by review_created_at is used. Same-day ties broken by max score.
+      - name: review_comment_title
+        description: Optional short title left by the customer. Null if not provided.
+      - name: review_comment_message
+        description: Optional free-text review body. Null if not provided.
+
+  - name: fct_order_items
+    description: >
+      One row per (order_id, order_item_id). Use for product, seller, and
+      revenue analysis. Delivery timestamps are carried from stg_orders for
+      convenience but are order-level — every item in an order shares the
+      same delivered_at and estimated_delivery_at.
+    data_tests:
+      - dbt_utils.equal_rowcount:
+          compare_model: ref('stg_order_items')
+    columns:
+      - name: order_id
+        description: Foreign key to fct_orders.
+        data_tests:
+          - not_null
+      - name: order_item_id
+        description: Sequential item number within the order. Not unique on its own.
+        data_tests:
+          - not_null
+      - name: seller_id
+        description: Foreign key to dim_sellers.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_sellers')
+                field: seller_id
+      - name: product_id
+        description: Foreign key to dim_products.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: seller_missed_shipping_limit
+        description: >
+          True if the seller handed to carrier after their shipping_limit_at
+          deadline. Separate from order-level is_late — a seller can miss their
+          limit but the order still arrive on time.
+      - name: product_category
+        description: English product category. Falls back to Portuguese if translation is missing.
+      - name: distance_km
+        description: >
+          Haversine distance in kilometres between seller and customer zip prefix centroids.
+          Null where either zip has no geolocation match (~0.5% of sellers, ~1.9% of customers).
+          Based on averaged zip prefix coordinates — indicative, not precise routing distance.
+
+  - name: dim_sellers
+    description: One row per seller, enriched with lat/lng from dim_locations.
+    columns:
+      - name: seller_id
+        description: Primary key.
+        data_tests:
+          - unique
+          - not_null
+
+  - name: dim_customers
+    description: >
+      One row per unique customer (customer_unique_id). Note that customer_id
+      on the fact tables is a per-order identifier — join to this dim via
+      stg_customers to resolve customer_unique_id if needed.
+    columns:
+      - name: customer_unique_id
+        description: Primary key. The real person, stable across orders.
+        data_tests:
+          - unique
+          - not_null
+
+  - name: dim_products
+    description: One row per product, with English category and physical attributes.
+    columns:
+      - name: product_id
+        description: Primary key.
+        data_tests:
+          - unique
+          - not_null
+
+  - name: dim_locations
+    description: >
+      One row per zip_code_prefix and state. Deduplicated from stg_geolocation
+      which has many rows per prefix. Lat/lng are averaged across all readings
+      for the prefix. Used to enrich dim_sellers and dim_customers.
+    columns:
+      - name: zip_code_prefix
+        description: Brazilian postal code prefix (5 digits).
+        data_tests:
+          - not_null

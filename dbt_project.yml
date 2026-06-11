@@ -1,0 +1,19 @@
+name: 'bravida_case'
+version: '1.0.0'
+profile: 'bravida_case'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  bravida_case:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

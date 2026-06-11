@@ -1,0 +1,138 @@
+version: 2
+
+models:
+  - name: stg_order_items
+    description: >
+      One row per (order_id, order_item_id). Renamed and cast from raw.order_items.
+      price renamed to item_price for clarity. shipping_limit_date cast to timestamp
+      and renamed to shipping_limit_at.
+    columns:
+      - name: order_id
+        description: Foreign key to stg_orders.
+        data_tests:
+          - not_null
+      - name: order_item_id
+        description: Sequential item number within the order. Not unique on its own.
+        data_tests:
+          - not_null
+      - name: seller_id
+        description: The seller fulfilling this line item.
+        data_tests:
+          - not_null
+      - name: item_price
+        description: Agreed price for this item. Does not include freight.
+      - name: freight_value
+        description: Freight cost for this item.
+      - name: shipping_limit_at
+        description: Deadline for the seller to hand this item to the carrier.
+
+  - name: stg_order_payments
+    description: >
+      One row per (order_id, payment_sequential). An order can be split across
+      multiple payment rows — e.g. voucher + credit card. Grain is
+      (order_id, payment_sequential). Summing payment_value per order_id gives
+      the total payment schedule, not the order value — see fct_orders notes.
+    columns:
+      - name: order_id
+        description: Foreign key to stg_orders.
+        data_tests:
+          - not_null
+      - name: payment_sequential
+        description: Order of payment rows within an order. 1 = primary payment method.
+      - name: payment_type
+        description: credit_card, boleto, voucher, debit_card, or not_defined.
+      - name: payment_value
+        description: >
+          Value of this payment row. For instalment payments this is the per-instalment
+          amount — do not use as order value without aggregating carefully.
+
+  - name: stg_order_reviews
+    description: >
+      One row per review_id. Mostly one review per order but not guaranteed —
+      87 orders have more than one review, some with conflicting scores.
+      Use the latest review_created_at per order for analysis. See fct_orders
+      for the deduplication logic.
+    columns:
+      - name: review_id
+        description: Primary key.
+        data_tests:
+          - not_null
+      - name: order_id
+        description: Foreign key to stg_orders. Not unique — an order can have multiple reviews.
+        data_tests:
+          - not_null
+      - name: review_score
+        description: Customer rating 1-5.
+      - name: review_created_at
+        description: When the customer submitted the review.
+
+  - name: stg_customers
+    description: >
+      One row per customer_id. Note customer_id is a per-order identifier —
+      the same person gets a new customer_id for each order they place.
+      customer_unique_id is the stable identifier for the real person across orders.
+    columns:
+      - name: customer_id
+        description: Primary key. Per-order identifier, not per person.
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_unique_id
+        description: Stable identifier for the real person across orders.
+
+  - name: stg_sellers
+    description: >
+      One row per seller_id. Renamed and cast from raw.sellers. seller_ prefix
+      stripped from city and state.
+    columns:
+      - name: seller_id
+        description: Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: city
+        description: Seller city.
+      - name: state
+        description: Seller state (Brazilian state abbreviation).
+
+  - name: stg_products
+    description: >
+      One row per product_id. Two typos fixed from raw: product_name_lenght and
+      product_description_lenght corrected to product_name_length and
+      product_description_length.
+    columns:
+      - name: product_id
+        description: Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: product_category_name
+        description: Category name in Portuguese. Join to stg_product_category_translation for English.
+
+  - name: stg_product_category_translation
+    description: >
+      One row per product_category_name. Maps Portuguese category names to English.
+      Not all products have a translation — coalesce to Portuguese name where missing.
+    columns:
+      - name: product_category_name
+        description: Primary key. Portuguese category name.
+        data_tests:
+          - unique
+          - not_null
+      - name: category_name_english
+        description: English translation of the category name.
+
+  - name: stg_geolocation
+    description: >
+      Brazilian zip-code prefix to lat/lng. WARNING: many rows per zip_code_prefix —
+      joining this table directly will fan out row counts. Use dim_locations which
+      deduplicates to one row per prefix.
+    columns:
+      - name: zip_code_prefix
+        description: 5-digit Brazilian postal code prefix. Not unique in this table.
+        data_tests:
+          - not_null
+      - name: latitude
+        description: Latitude reading for this zip prefix entry.
+      - name: longitude
+        description: Longitude reading for this zip prefix entry.

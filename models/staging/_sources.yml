@@ -1,0 +1,35 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      Raw Olist e-commerce tables, loaded as-is from CSV by load_olist.py.
+      Treat these as immutable. Do not reference raw.* outside the staging layer.
+    schema: raw
+    tables:
+      - name: orders
+        description: One row per order. order_id is the grain.
+      - name: order_items
+        description: >
+          One row per item line within an order. Grain is (order_id, order_item_id).
+          An order can have many item lines. price and freight_value are per line.
+      - name: order_payments
+        description: >
+          Payment records. Grain is (order_id, payment_sequential).
+          An order can be split across multiple payment rows (e.g. voucher + card).
+      - name: order_reviews
+        description: Customer review per order (mostly one per order, not guaranteed).
+      - name: customers
+        description: >
+          One row per customer_id. Note customer_id is per-order; customer_unique_id
+          identifies the real person across orders.
+      - name: sellers
+        description: One row per seller_id, with seller location.
+      - name: products
+        description: One row per product_id, with category and physical attributes.
+      - name: product_category_translation
+        description: Maps Portuguese category names to English.
+      - name: geolocation
+        description: >
+          Brazilian zip-code prefix to lat/lng. WARNING: many rows per zip prefix.
+          Joining naively will fan out your row counts.
